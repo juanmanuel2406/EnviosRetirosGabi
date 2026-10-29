@@ -4,7 +4,7 @@
    - Gabi (se abre con el link terminado en #gabi y queda recordado en ese dispositivo): además carga, edita,
      elimina pedidos, pone o saca los colores y devuelve pedidos desde el historial.
    Reglas de la planilla:
-   - Rojo = frenado / sin pagar: no se puede despachar ni entregar. Cuando Gabi saca el rojo, queda pago.
+   - Rojo = pedido frenado: no se puede despachar ni entregar. Quitar el rojo no confirma un pago.
    - Verde = pasó por técnica. Amarillo = prestar atención. */
 (() => {
 'use strict';
@@ -14,16 +14,16 @@ const SAAS_VENTA = 'https://beta.saasargentina.com/ventas.php?a=ver&id=';
 const KEY_DATA = 'envios-gabi-v1', KEY_GABI = 'envios-gabi-mode', KEY_THEME = 'envios-gabi-theme';
 const FLAGS = {
   tec:  { name: 'Pasó por técnica',     hint: 'Tiene algo armado' },
-  stop: { name: 'Frenado · no entregar', hint: 'Sin pagar. Al sacarlo queda pago' },
+  stop: { name: 'Frenado · no entregar', hint: 'Pedido frenado. No despachar ni entregar' },
   warn: { name: 'Prestar atención',     hint: 'Algo para revisar' }
 };
-const METHODS = { envio: ['Expreso','Hogareño','Envío vehículo','Peugeot','Flex'], retiro: ['Retira cliente','Retira en local Morón'] };
+const METHODS = { envio: ['Expreso','Hogareño','Envío vehículo','Peugeot','Flex'], retiro: ['Retira cliente','Retira en local Morón','Comi - Expreso'] };
 const EST = { pend: 'Pendiente', prep: 'Preparado', ret: 'Entregado' };
 const EXPRESOS = window.EXPRESOS || [];
 
 /* ---------- almacenamiento (reemplazable por una base compartida) ---------- */
 const Store = {
-  load() { try { const d = JSON.parse(localStorage.getItem(KEY_DATA)); if (Array.isArray(d) && d.length) return d; } catch (e) {} return (window.SEED || []).map(o => ({ ...o })); },
+  load() { try { const d = JSON.parse(localStorage.getItem(KEY_DATA)); if (Array.isArray(d)) return d; } catch (e) {} return (window.SEED || []).map(o => ({ ...o })); },
   save(list) { try { localStorage.setItem(KEY_DATA, JSON.stringify(list)); } catch (e) {} }
 };
 const pref = {
@@ -45,8 +45,37 @@ const $$ = s => [...document.querySelectorAll(s)];
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^(expreso|transporte)\s+/, '').trim();
-const findExp = n => { n = norm(n); if (!n) return null; return EXPRESOS.find(e => { const m = norm(e.name); return m === n || m.includes(n) || n.includes(m); }); };
-const money = v => v ? '$ ' + Number(String(v).replace(/\D/g, '')).toLocaleString('es-AR') : '';
+const expIndex = EXPRESOS.map(exp => ({ exp, name: norm(exp.name) }));
+const findExp = value => {
+  const name = norm(value);
+  if (!name) return null;
+  const exact = expIndex.filter(item => item.name === name);
+  if (exact.length) return exact.length === 1 ? exact[0].exp : null;
+  const matches = expIndex.filter(item => item.name && (item.name.includes(name) || name.includes(item.name)));
+  return matches.length === 1 ? matches[0].exp : null;
+};
+const parseAmount = value => {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : NaN;
+  const text = String(value ?? '').trim().replace(/^\$\s*/, '');
+  if (!text) return null;
+  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$/.test(text)) return NaN;
+  const amount = Number(text.replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(amount) ? amount : NaN;
+};
+const money = value => {
+  const amount = parseAmount(value);
+  return amount === null || !Number.isFinite(amount) ? '' : '$ ' + amount.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+};
+function parseSale(value) {
+  const text = String(value ?? '').trim();
+  if (!text || /^\d+$/.test(text)) return text;
+  try {
+    const url = new URL(text);
+    const id = url.searchParams.get('id');
+    if (url.protocol === 'https:' && url.hostname === 'beta.saasargentina.com' && !url.username && !url.password && !url.port && url.pathname === '/ventas.php' && /^\d+$/.test(id || '')) return id;
+  } catch (_) {}
+  return null;
+}
 const dd = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
 const active = k => orders.filter(o => o.kind === k && !o.arch).sort((a, b) => a.t - b.t);
 const archived = () => orders.filter(o => o.arch).sort((a, b) => b.arch - a.arch);
@@ -148,7 +177,7 @@ function header() {
   $('#h1').textContent = TITLES[tab];
   let s = '';
   if (tab === 'envio') { const l = active('envio'); s = `<span class="mono">${l.filter(o=>!o.arm&&!o.desp).length}</span> por armar · <span class="mono">${l.filter(o=>o.arm&&!o.desp&&o.flag!=='stop').length}</span> listos · <span class="mono">${l.filter(o=>o.flag==='stop'&&!o.desp).length}</span> frenados`; }
-  else if (tab === 'retiro') { const l = active('retiro'); s = `<span class="mono">${l.filter(o=>o.estado==='prep').length}</span> preparados esperando · <span class="mono">${l.filter(o=>o.flag==='stop'&&o.estado!=='ret').length}</span> sin pagar`; }
+  else if (tab === 'retiro') { const l = active('retiro'); s = `<span class="mono">${l.filter(o=>o.estado==='prep').length}</span> preparados esperando · <span class="mono">${l.filter(o=>o.flag==='stop'&&o.estado!=='ret').length}</span> frenados`; }
   else if (tab === 'hist') s = 'Envíos despachados y retiros entregados.';
   else s = 'Dirección, horario y contacto de cada transporte. Tocá un teléfono para copiarlo.';
   $('#hsub').innerHTML = s;
@@ -269,7 +298,7 @@ $('#sheet').addEventListener('click', e => {
     return;
   }
   if (act === 'estado') {
-    const s = b.dataset.s; if (o.estado === s) return;
+    const s = b.dataset.s; if (o.kind !== 'retiro' || !Object.hasOwn(EST, s) || o.estado === s) return;
     if (s === 'ret' && o.flag === 'stop') { shake(b.closest('.row')); return; }
     const prev = o.estado; o.estado = s; save();
     b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
@@ -324,7 +353,7 @@ menu.addEventListener('click', e => {
   const b = e.target.closest('[data-f]'); if (!b || !menuFor) return;
   const o = menuFor, prev = o.flag || '', f = b.dataset.f; closeMenu(); if (prev === f) return;
   o.flag = f; save(); render();
-  const msg = prev === 'stop' && !f ? `${o.cli}: liberado, ya está pago` : f ? `${o.cli}: ${FLAGS[f].name}` : `${o.cli}: sin color`;
+  const msg = prev === 'stop' && !f ? `${o.cli}: pedido liberado` : f ? `${o.cli}: ${FLAGS[f].name}` : `${o.cli}: sin color`;
   toast(msg, () => { o.flag = prev; save(); render(); });
 });
 document.addEventListener('pointerdown', e => { if (menu.dataset.state === 'open' && !menu.contains(e.target) && !e.target.closest('[data-act="flag"]')) closeMenu(); });
@@ -405,7 +434,16 @@ $('#f-del').addEventListener('click', () => {
 $('#form').addEventListener('submit', e => {
   e.preventDefault(); if (!gabi) return;
   const v = {}; F.forEach(k => { v[k] = $('#f-' + k).value.trim(); });
-  if (!v.cli) { $('#f-err').hidden = false; shake($('#f-cli')); $('#f-cli').focus(); return; }
+  const fail = (message, field) => {
+    $('#f-err').textContent = message; $('#f-err').hidden = false;
+    shake($('#f-' + field)); $('#f-' + field).focus();
+  };
+  if (!v.cli) return fail('Ingresá el cliente.', 'cli');
+  const saleId = parseSale(v.venta);
+  if (saleId === null) return fail('Ingresá el número de venta o el enlace HTTPS de ventas de beta.saasargentina.com.', 'venta');
+  v.venta = saleId;
+  if (!Object.hasOwn(METHODS, fkind) || !METHODS[fkind].includes(v.met)) return fail('Seleccioná un método válido.', 'met');
+  if (fkind === 'envio' && Number.isNaN(parseAmount(v.monto))) return fail('Ingresá un importe válido, por ejemplo 1.500,50.', 'monto');
   if (fkind === 'retiro') v.ubic = v.tel = v.hor = v.monto = v.exp = '';
   const isNew = !editing; let o;
   if (editing) {
@@ -413,7 +451,7 @@ $('#form').addEventListener('submit', e => {
     Object.assign(o, v, { flag: fpick, kind: fkind });
     if (kindChanged) { if (fkind === 'retiro') { o.estado = 'pend'; delete o.arm; delete o.desp; } else { o.arm = false; o.desp = false; delete o.estado; } }
   } else {
-    o = { id: 'p' + Date.now(), kind: fkind, ...v, flag: fpick, fecha: dd(new Date()), t: Date.now() };
+    o = { id: 'p' + crypto.randomUUID(), kind: fkind, ...v, flag: fpick, fecha: dd(new Date()), t: Date.now() };
     if (fkind === 'envio') { o.arm = false; o.desp = false; } else o.estado = 'pend';
     orders.push(o);
   }

@@ -90,7 +90,7 @@
       </div>
       <div class="f2">
         <div class="f"><label for="f-vend">Vendedor</label><select id="f-vend" class="in"><option>GK</option><option>Gabriel</option></select></div>
-        <div class="f"><label for="f-venta">N° de venta SaaS</label><input id="f-venta" class="in mono" inputmode="numeric" placeholder="1444651"></div>
+        <div class="f"><label for="f-venta">Venta SaaS (número o enlace)</label><input id="f-venta" class="in mono" type="text" placeholder="1444651 o enlace de la venta"></div>
       </div>
       <div class="f"><label for="f-cli">Cliente</label><input id="f-cli" class="in" placeholder="PERRICONE MARCELO EDUARDO"></div>
       <div class="f"><label for="f-com">Comentarios</label><textarea id="f-com" class="in" placeholder="Dirección, a quién dejarle, bultos, valor declarado…"></textarea></div>
@@ -102,14 +102,14 @@
         </div>
         <div class="f2">
           <div class="f"><label for="f-hor">Horario</label><input id="f-hor" class="in" placeholder="9:30 a 13 y 16 a 19"></div>
-          <div class="f"><label for="f-monto">Valor ($)</label><input id="f-monto" class="in mono" inputmode="numeric" placeholder="150000"></div>
+          <div class="f"><label for="f-monto">Valor ($)</label><input id="f-monto" class="in mono" inputmode="decimal" placeholder="150.000,50"></div>
         </div>
         <div class="f"><label for="f-exp">Expreso</label><input id="f-exp" class="in" list="dl-exp" placeholder="Elegí de la lista o escribí"><datalist id="dl-exp"></datalist>
           <div class="exinfo" id="exinfo" hidden></div>
         </div>
       </div>
       <div class="sec"><div class="f"><span class="lab">Color</span><div class="fpick" id="fpick"></div></div></div>
-      <p class="err" id="f-err" hidden>Falta el nombre del cliente.</p>
+      <p class="err" id="f-err" role="alert" hidden>Falta el nombre del cliente.</p>
     </div>
     <div class="dr-f">
       <button type="button" class="danger" id="f-del" hidden>Eliminar</button><span></span>
